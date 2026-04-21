@@ -71,10 +71,7 @@ from ultralytics.nn.modules import (
     YOLOEDetect,
     YOLOESegment,
     YOLOESegment26,
-    v10Detect,
-    DualSKBlock,
-    SASK,
-    CASK
+    v10Detect
 )
 from ultralytics.utils import DEFAULT_CFG_DICT, LOGGER, WINDOWS, YAML, colorstr, emojis
 from ultralytics.utils.checks import check_requirements, check_suffix, check_yaml
@@ -1593,9 +1590,6 @@ def parse_model(d, ch, verbose=True):
             C1,
             C2,
             C2f,
-            DualSKBlock,
-            SASK,
-            CASK,
             C3k2,
             RepNCSPELAN4,
             ELAN1,
@@ -1622,9 +1616,6 @@ def parse_model(d, ch, verbose=True):
             C1,
             C2,
             C2f,
-            DualSKBlock,
-            SASK,
-            CASK,
             C3k2,
             C2fAttn,
             C3,

@@ -52,6 +52,10 @@ __all__ = (
     "ResNetLayer",
     "SCDown",
     "TorchVision",
+    "C2fDualSK",
+    "C2fGhost",
+    "DualSKLite",
+    "BottleneckDualSK",
 )
 
 
@@ -2069,7 +2073,130 @@ class RealNVP(nn.Module):
 # ==========================================
 # THÊM MODULE DUAL-SK TỪ ĐÂY
 # ==========================================
+class DualSKLite(nn.Module):
+    """
+    DualSK-Lite for YOLOv8n:
+    - MSK: two depthwise branches with different kernels
+    - CASK: channel-aware selective weighting
+    - SASK: spatial-aware selective weighting
+    - residual raw path: preserve original feature
+    """
 
+    def __init__(self, c, k1=5, k2=7):
+        super().__init__()
+
+        # Multi-scale selective kernel branches
+        self.b1 = DWConv(c, c, k1, 1)
+        self.b2 = DWConv(c, c, k2, 1)
+
+        # CASK: lightweight Conv1D along channel dimension
+        self.cask_conv = nn.Conv1d(1, 1, kernel_size=3, padding=1, bias=False)
+
+        # SASK: spatial attention over two branches
+        self.sask_conv = nn.Conv2d(2, 2, kernel_size=7, padding=3, bias=True)
+
+        self.cproj = Conv(c, c, 1, 1)
+        self.sproj = Conv(c, c, 1, 1)
+
+        # Fuse raw + spatial + channel features
+        self.fuse = Conv(c * 3, c, 1, 1)
+
+    def forward(self, x):
+        x1 = self.b1(x)
+        x2 = self.b2(x)
+
+        b, c, _, _ = x.shape
+
+        # ----- CASK -----
+        cstat1 = x1.mean(dim=(2, 3)) + x1.amax(dim=(2, 3))
+        cstat2 = x2.mean(dim=(2, 3)) + x2.amax(dim=(2, 3))
+
+        cstat = torch.stack((cstat1, cstat2), dim=1)  # B, 2, C
+        cw = self.cask_conv(cstat.reshape(b * 2, 1, c)).reshape(b, 2, c)
+        cw = cw.softmax(dim=1).unsqueeze(-1).unsqueeze(-1)
+
+        xc = x1 * cw[:, 0] + x2 * cw[:, 1]
+        xc = self.cproj(xc)
+
+        # ----- SASK -----
+        sf = torch.cat((x1, x2), dim=1)
+        s_avg = sf.mean(dim=1, keepdim=True)
+        s_max = sf.amax(dim=1, keepdim=True)
+
+        sw = self.sask_conv(torch.cat((s_avg, s_max), dim=1))
+        sw = sw.softmax(dim=1)
+
+        xs = x1 * sw[:, 0:1] + x2 * sw[:, 1:2]
+        xs = self.sproj(xs)
+
+        # ----- Fusion -----
+        return self.fuse(torch.cat((x, xs, xc), dim=1))
+
+
+class BottleneckDualSK(nn.Module):
+    """YOLOv8 Bottleneck + DualSKLite attention."""
+
+    def __init__(self, c1, c2, shortcut=True, g=1, k=((3, 3), (3, 3)), e=0.5):
+        super().__init__()
+        c_ = int(c2 * e)
+
+        self.cv1 = Conv(c1, c_, k[0], 1)
+        self.cv2 = Conv(c_, c2, k[1], 1, g=g)
+        self.attn = DualSKLite(c2)
+
+        self.add = shortcut and c1 == c2
+
+    def forward(self, x):
+        y = self.attn(self.cv2(self.cv1(x)))
+        return x + y if self.add else y
+
+
+class C2fDualSK(nn.Module):
+    """
+    C2f block where internal bottlenecks are replaced by BottleneckDualSK.
+    Use only in late backbone stages: P4/P5.
+    """
+
+    def __init__(self, c1, c2, n=1, shortcut=False, g=1, e=0.5):
+        super().__init__()
+        self.c = int(c2 * e)
+
+        self.cv1 = Conv(c1, 2 * self.c, 1, 1)
+        self.cv2 = Conv((2 + n) * self.c, c2, 1)
+
+        self.m = nn.ModuleList(
+            BottleneckDualSK(self.c, self.c, shortcut, g, e=1.0)
+            for _ in range(n)
+        )
+
+    def forward(self, x):
+        y = list(self.cv1(x).chunk(2, 1))
+        y.extend(m(y[-1]) for m in self.m)
+        return self.cv2(torch.cat(y, 1))
+
+
+class C2fGhost(nn.Module):
+    """
+    Lightweight C2f for neck.
+    It uses GhostConv and GhostBottleneck to reduce computation.
+    """
+
+    def __init__(self, c1, c2, n=1, shortcut=False, g=1, e=0.5):
+        super().__init__()
+        self.c = int(c2 * e)
+
+        self.cv1 = GhostConv(c1, 2 * self.c, 1, 1)
+        self.cv2 = GhostConv((2 + n) * self.c, c2, 1, 1)
+
+        self.m = nn.ModuleList(
+            GhostBottleneck(self.c, self.c, 3, 1)
+            for _ in range(n)
+        )
+
+    def forward(self, x):
+        y = list(self.cv1(x).chunk(2, 1))
+        y.extend(m(y[-1]) for m in self.m)
+        return self.cv2(torch.cat(y, 1))
 # ==========================================
 # KẾT THÚC MODULE DUAL-SK
 # ==========================================

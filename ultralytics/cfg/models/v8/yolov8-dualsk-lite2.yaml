@@ -1,0 +1,46 @@
+# YOLOv8n-DualSK-Opt
+# Goal:
+# - Accuracy > YOLOv8n baseline
+# - Params/GFLOPs <= YOLOv8n baseline
+# - Keep P3/P4 neck strong for localization
+# - Use reduced DualSK at P4 and P5
+
+nc: 1
+
+scales:
+  n: [0.33, 0.25, 1024]
+
+backbone:
+  # [from, repeats, module, args]
+  - [-1, 1, Conv, [64, 3, 2]]          # 0-P1/2
+  - [-1, 1, Conv, [128, 3, 2]]         # 1-P2/4
+  - [-1, 3, C2f, [128, True]]          # 2
+
+  - [-1, 1, Conv, [256, 3, 2]]         # 3-P3/8
+  - [-1, 6, C2f, [256, True]]          # 4 keep original for small details
+
+  - [-1, 1, Conv, [512, 3, 2]]         # 5-P4/16
+  - [-1, 3, C2fDualSK, [512, True]]    # 6 reduced DualSK at P4
+
+  - [-1, 1, Conv, [1024, 3, 2]]        # 7-P5/32
+  - [-1, 2, C2fDualSK, [1024, True]]   # 8 reduced DualSK at P5
+  - [-1, 1, SPPF, [1024, 5]]           # 9
+
+head:
+  - [-1, 1, nn.Upsample, [None, 2, "nearest"]]
+  - [[-1, 6], 1, Concat, [1]]
+  - [-1, 3, C2f, [512]]                # 12 keep normal neck
+
+  - [-1, 1, nn.Upsample, [None, 2, "nearest"]]
+  - [[-1, 4], 1, Concat, [1]]
+  - [-1, 3, C2f, [256]]                # 15 keep P3 head strong
+
+  - [-1, 1, Conv, [256, 3, 2]]
+  - [[-1, 12], 1, Concat, [1]]
+  - [-1, 3, C2f, [512]]                # 18 keep normal P4 refinement
+
+  - [-1, 1, Conv, [512, 3, 2]]
+  - [[-1, 9], 1, Concat, [1]]
+  - [-1, 2, C2f, [1024]]               # 21 reduce from 3 to 2 for lightness
+
+  - [[15, 18, 21], 1, Detect, [nc]]

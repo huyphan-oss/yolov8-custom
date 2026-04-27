@@ -1653,6 +1653,7 @@ def parse_model(d, ch, verbose=True):
         n = n_ = max(round(n * depth), 1) if n > 1 else n  # depth gain
         if m in {DualSKAdd}:
             c1 = ch[f]
+            print("DEBUG DualSKAdd parse:", "f=", f, "c1=", c1, "args_before=", args)
             args = [c1, *args]   # args trong YAML là [4] => thành [c1, 4]
             c2 = c1              # DualSKAdd không đổi số channel
         elif m in base_modules:

@@ -76,7 +76,7 @@ from ultralytics.nn.modules import (
     C2fGhost,
     DualSKLite,
     BottleneckDualSK,
-    DualSKAdd
+    DLKBlock
 )
 from ultralytics.utils import DEFAULT_CFG_DICT, LOGGER, WINDOWS, YAML, colorstr, emojis
 from ultralytics.utils.checks import check_requirements, check_suffix, check_yaml
@@ -1651,10 +1651,10 @@ def parse_model(d, ch, verbose=True):
                 with contextlib.suppress(ValueError):
                     args[j] = locals()[a] if a in locals() else ast.literal_eval(a)
         n = n_ = max(round(n * depth), 1) if n > 1 else n  # depth gain
-        if m in {DualSKAdd}:
+        if m in {DLKBlock}:
             c1 = ch[f]
-            args = [c1, *args]   # args trong YAML là [4] => thành [c1, 4]
-            c2 = c1              # DualSKAdd không đổi số channel
+            args = [c1, *args]
+            c2 = c1
         elif m in base_modules:
             c1, c2 = ch[f], args[0]
             if c2 != nc:  # if c2 != nc (e.g., Classify() output)

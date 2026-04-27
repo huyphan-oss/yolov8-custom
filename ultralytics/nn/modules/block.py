@@ -56,7 +56,7 @@ __all__ = (
     "C2fGhost",
     "DualSKLite",
     "BottleneckDualSK",
-    "DualSKAdd",
+    "DLKBlock",
 )
 
 
@@ -2200,26 +2200,28 @@ class C2fGhost(nn.Module):
         return self.cv2(torch.cat(y, 1))
     
 
-class DualSKAdd(nn.Module):
+class DLKBlock(nn.Module):
     """
-    Residual DualSK attention block.
-    It refines features without replacing the original C2f representation.
+    Deployable Large-Kernel Block for UAV dense small-target detection.
+    Uses only Conv/DWConv/Concat/Residual, suitable for OpenVINO/Vitis-AI.
     """
 
-    def __init__(self, c, r=4, scale=0.5):
+    def __init__(self, c, r=4, scale=0.1):
         super().__init__()
         c_ = max(c // r, 32)
 
         self.reduce = Conv(c, c_, 1, 1)
-        self.attn = DualSKLite(c_)
-        self.expand = Conv(c_, c, 1, 1)
+        self.dw5 = DWConv(c_, c_, 5, 1)
+        self.dw7 = DWConv(c_, c_, 7, 1)
+        self.fuse = Conv(c_ * 2, c, 1, 1)
 
-        self.gamma = nn.Parameter(torch.zeros(1))
-        self.scale = scale
+        self.gamma = nn.Parameter(torch.ones(1) * scale)
 
     def forward(self, x):
-        y = self.expand(self.attn(self.reduce(x)))
-        return x + self.gamma * y * self.scale
+        y = self.reduce(x)
+        y = torch.cat((self.dw5(y), self.dw7(y)), dim=1)
+        y = self.fuse(y)
+        return x + self.gamma * y
 # ==========================================
 # KẾT THÚC MODULE DUAL-SK
 # ==========================================

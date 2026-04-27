@@ -63,7 +63,7 @@ from .block import (
     C2fGhost,
     DualSKLite,
     BottleneckDualSK,
-    DualSKAdd
+    DLKBlock
 )
 from .conv import (
     CBAM,
@@ -196,5 +196,5 @@ __all__ = (
     "C2fGhost",
     "DualSKLite",
     "BottleneckDualSK",
-    "DualSKAdd",
+    "DLKBlock",
 )

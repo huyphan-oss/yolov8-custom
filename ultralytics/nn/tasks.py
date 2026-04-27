@@ -1596,7 +1596,6 @@ def parse_model(d, ch, verbose=True):
             C2,
             C2f,
             C2fDualSK,
-            DualSKAdd,
             C2fGhost,
             C3k2,
             RepNCSPELAN4,
@@ -1652,7 +1651,11 @@ def parse_model(d, ch, verbose=True):
                 with contextlib.suppress(ValueError):
                     args[j] = locals()[a] if a in locals() else ast.literal_eval(a)
         n = n_ = max(round(n * depth), 1) if n > 1 else n  # depth gain
-        if m in base_modules:
+        if m in {DualSKAdd}:
+            c1 = ch[f]
+            args = [c1, *args]   # args trong YAML là [4] => thành [c1, 4]
+            c2 = c1              # DualSKAdd không đổi số channel
+        elif m in base_modules:
             c1, c2 = ch[f], args[0]
             if c2 != nc:  # if c2 != nc (e.g., Classify() output)
                 c2 = make_divisible(min(c2, max_channels) * width, 8)

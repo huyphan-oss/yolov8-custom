@@ -76,6 +76,7 @@ from ultralytics.nn.modules import (
     C2fGhost,
     DualSKLite,
     BottleneckDualSK,
+    DualSKAdd
 )
 from ultralytics.utils import DEFAULT_CFG_DICT, LOGGER, WINDOWS, YAML, colorstr, emojis
 from ultralytics.utils.checks import check_requirements, check_suffix, check_yaml
@@ -1595,6 +1596,7 @@ def parse_model(d, ch, verbose=True):
             C2,
             C2f,
             C2fDualSK,
+            DualSKAdd,
             C2fGhost,
             C3k2,
             RepNCSPELAN4,

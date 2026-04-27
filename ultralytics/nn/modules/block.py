@@ -56,6 +56,7 @@ __all__ = (
     "C2fGhost",
     "DualSKLite",
     "BottleneckDualSK",
+    "DualSKAdd",
 )
 
 
@@ -2197,6 +2198,22 @@ class C2fGhost(nn.Module):
         y = list(self.cv1(x).chunk(2, 1))
         y.extend(m(y[-1]) for m in self.m)
         return self.cv2(torch.cat(y, 1))
+    
+
+class DualSKAdd(nn.Module):
+    """
+    Residual DualSK attention block.
+    It refines features without replacing the original C2f representation.
+    """
+
+    def __init__(self, c, scale=0.5):
+        super().__init__()
+        self.attn = DualSKLite(c)
+        self.gamma = nn.Parameter(torch.zeros(1))
+        self.scale = scale
+
+    def forward(self, x):
+        return x + self.gamma * self.attn(x) * self.scale
 # ==========================================
 # KẾT THÚC MODULE DUAL-SK
 # ==========================================

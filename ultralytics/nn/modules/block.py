@@ -2206,14 +2206,20 @@ class DualSKAdd(nn.Module):
     It refines features without replacing the original C2f representation.
     """
 
-    def __init__(self, c, scale=0.5):
+    def __init__(self, c, r=4, scale=0.5):
         super().__init__()
-        self.attn = DualSKLite(c)
+        c_ = max(c // r, 32)
+
+        self.reduce = Conv(c, c_, 1, 1)
+        self.attn = DualSKLite(c_)
+        self.expand = Conv(c_, c, 1, 1)
+
         self.gamma = nn.Parameter(torch.zeros(1))
         self.scale = scale
 
     def forward(self, x):
-        return x + self.gamma * self.attn(x) * self.scale
+        y = self.expand(self.attn(self.reduce(x)))
+        return x + self.gamma * y * self.scale
 # ==========================================
 # KẾT THÚC MODULE DUAL-SK
 # ==========================================

@@ -2146,19 +2146,28 @@ class LiteDualSK(nn.Module):
     """
     Lightweight DualSK-inspired block for YOLOv8n.
 
-    Design:
-    - Uses two depthwise convolution branches with different kernel sizes.
-    - Uses LiteSASK for spatial attention.
-    - Uses LiteCASK for channel attention.
-    - Keeps a residual connection to preserve lightweight model stability.
+    This version is compatible with Ultralytics parse_model().
+    It accepts both:
+        LiteDualSK(c1)
+    and:
+        LiteDualSK(c1, c2)
 
-    Recommended placement:
-    - After deeper C2f blocks in YOLOv8n backbone.
-    - Avoid placing it in every stage.
+    c2 is ignored because this block preserves input/output channels.
     """
 
-    def __init__(self, channels, k1=5, k2=7, cask_kernel=3):
+    def __init__(self, c1, c2=None, k1=5, k2=7, cask_kernel=3):
         super().__init__()
+
+        # Preserve channels. Ignore c2 if Ultralytics passes it.
+        channels = c1
+
+        # Force odd kernels to keep feature map size unchanged.
+        if k1 % 2 == 0:
+            k1 += 1
+        if k2 % 2 == 0:
+            k2 += 1
+        if cask_kernel % 2 == 0:
+            cask_kernel += 1
 
         self.dwconv_small = nn.Conv2d(
             channels,
@@ -2202,6 +2211,14 @@ class LiteDualSK(nn.Module):
 
         x_small = self.dwconv_small(x)
         x_large = self.dwconv_large(x)
+
+        # Safety crop in case any odd input size creates a mismatch.
+        if x_small.shape[-2:] != x_large.shape[-2:]:
+            h = min(x_small.shape[-2], x_large.shape[-2])
+            w = min(x_small.shape[-1], x_large.shape[-1])
+            x_small = x_small[..., :h, :w]
+            x_large = x_large[..., :h, :w]
+            identity = identity[..., :h, :w]
 
         x_msk = x_small + x_large
         x_msk = self.act(self.bn(x_msk))

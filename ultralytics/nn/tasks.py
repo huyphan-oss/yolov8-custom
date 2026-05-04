@@ -1593,7 +1593,6 @@ def parse_model(d, ch, verbose=True):
             C1,
             C2,
             C2f,
-            LiteDualSK,
             C3k2,
             RepNCSPELAN4,
             ELAN1,
@@ -1646,7 +1645,11 @@ def parse_model(d, ch, verbose=True):
                 with contextlib.suppress(ValueError):
                     args[j] = locals()[a] if a in locals() else ast.literal_eval(a)
         n = n_ = max(round(n * depth), 1) if n > 1 else n  # depth gain
-        if m in base_modules:
+        if m is LiteDualSK:
+            c1 = ch[f]
+            c2 = c1
+            args = [c1, *args]
+        elif m in base_modules:
             c1, c2 = ch[f], args[0]
             if c2 != nc:  # if c2 != nc (e.g., Classify() output)
                 c2 = make_divisible(min(c2, max_channels) * width, 8)

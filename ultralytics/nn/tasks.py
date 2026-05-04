@@ -72,8 +72,6 @@ from ultralytics.nn.modules import (
     YOLOESegment,
     YOLOESegment26,
     v10Detect,
-    C2fDualSK,
-    C2fGhost,
     LiteDualSK,
     LiteCASK,
     LiteSASK,

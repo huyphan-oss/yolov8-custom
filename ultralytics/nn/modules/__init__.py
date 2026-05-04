@@ -59,11 +59,9 @@ from .block import (
     ResNetLayer,
     SCDown,
     TorchVision,
-    C2fDualSK,
-    C2fGhost,
-    DualSKLite,
-    BottleneckDualSK,
-    DLKBlock
+    LiteCASK,
+    LiteSASK,
+    LiteDualSK,
 )
 from .conv import (
     CBAM,
@@ -192,9 +190,7 @@ __all__ = (
     "YOLOESegment",
     "YOLOESegment26",
     "v10Detect",
-    "C2fDualSK",
-    "C2fGhost",
-    "DualSKLite",
-    "BottleneckDualSK",
-    "DLKBlock",
+    "LiteCASK",
+    "LiteSASK",
+    "LiteDualSK",
 )

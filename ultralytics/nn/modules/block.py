@@ -52,11 +52,9 @@ __all__ = (
     "ResNetLayer",
     "SCDown",
     "TorchVision",
-    "C2fDualSK",
-    "C2fGhost",
-    "DualSKLite",
-    "BottleneckDualSK",
-    "DLKBlock",
+    "LiteDualSK",
+    "LiteCASK",
+    "LiteSASK",
 )
 
 
@@ -2074,154 +2072,147 @@ class RealNVP(nn.Module):
 # ==========================================
 # THÊM MODULE DUAL-SK TỪ ĐÂY
 # ==========================================
-class DualSKLite(nn.Module):
+
+
+class LiteCASK(nn.Module):
     """
-    DualSK-Lite for YOLOv8n:
-    - MSK: two depthwise branches with different kernels
-    - CASK: channel-aware selective weighting
-    - SASK: spatial-aware selective weighting
-    - residual raw path: preserve original feature
+    Lite Channel-Aware Selective Kernel.
+    Channel attention branch inspired by DualSKNet CASK.
+    Uses GAP + GMP + Conv1D for lightweight channel dependency modeling.
     """
 
-    def __init__(self, c, k1=5, k2=7):
+    def __init__(self, channels, k_size=3):
         super().__init__()
+        self.avg_pool = nn.AdaptiveAvgPool2d(1)
+        self.max_pool = nn.AdaptiveMaxPool2d(1)
 
-        # Multi-scale selective kernel branches
-        self.b1 = DWConv(c, c, k1, 1)
-        self.b2 = DWConv(c, c, k2, 1)
-
-        # CASK: lightweight Conv1D along channel dimension
-        self.cask_conv = nn.Conv1d(1, 1, kernel_size=3, padding=1, bias=False)
-
-        # SASK: spatial attention over two branches
-        self.sask_conv = nn.Conv2d(2, 2, kernel_size=7, padding=3, bias=True)
-
-        self.cproj = Conv(c, c, 1, 1)
-        self.sproj = Conv(c, c, 1, 1)
-
-        # Fuse raw + spatial + channel features
-        self.fuse = Conv(c * 3, c, 1, 1)
-
-    def forward(self, x):
-        x1 = self.b1(x)
-        x2 = self.b2(x)
-
-        b, c, _, _ = x.shape
-
-        # ----- CASK -----
-        cstat1 = x1.mean(dim=(2, 3)) + x1.amax(dim=(2, 3))
-        cstat2 = x2.mean(dim=(2, 3)) + x2.amax(dim=(2, 3))
-
-        cstat = torch.stack((cstat1, cstat2), dim=1)  # B, 2, C
-        cw = self.cask_conv(cstat.reshape(b * 2, 1, c)).reshape(b, 2, c)
-        cw = cw.softmax(dim=1).unsqueeze(-1).unsqueeze(-1)
-
-        xc = x1 * cw[:, 0] + x2 * cw[:, 1]
-        xc = self.cproj(xc)
-
-        # ----- SASK -----
-        sf = torch.cat((x1, x2), dim=1)
-        s_avg = sf.mean(dim=1, keepdim=True)
-        s_max = sf.amax(dim=1, keepdim=True)
-
-        sw = self.sask_conv(torch.cat((s_avg, s_max), dim=1))
-        sw = sw.softmax(dim=1)
-
-        xs = x1 * sw[:, 0:1] + x2 * sw[:, 1:2]
-        xs = self.sproj(xs)
-
-        # ----- Fusion -----
-        return self.fuse(torch.cat((x, xs, xc), dim=1))
-
-
-class BottleneckDualSK(nn.Module):
-    """YOLOv8 Bottleneck + DualSKLite attention."""
-
-    def __init__(self, c1, c2, shortcut=True, g=1, k=((3, 3), (3, 3)), e=0.5):
-        super().__init__()
-        c_ = int(c2 * e)
-
-        self.cv1 = Conv(c1, c_, k[0], 1)
-        self.cv2 = Conv(c_, c2, k[1], 1, g=g)
-        self.attn = DualSKLite(c2)
-
-        self.add = shortcut and c1 == c2
-
-    def forward(self, x):
-        y = self.attn(self.cv2(self.cv1(x)))
-        return x + y if self.add else y
-
-
-class C2fDualSK(nn.Module):
-    """
-    C2f block where internal bottlenecks are replaced by BottleneckDualSK.
-    Use only in late backbone stages: P4/P5.
-    """
-
-    def __init__(self, c1, c2, n=1, shortcut=False, g=1, e=0.5):
-        super().__init__()
-        self.c = int(c2 * e)
-
-        self.cv1 = Conv(c1, 2 * self.c, 1, 1)
-        self.cv2 = Conv((2 + n) * self.c, c2, 1)
-
-        self.m = nn.ModuleList(
-            BottleneckDualSK(self.c, self.c, shortcut, g, e=1.0)
-            for _ in range(n)
+        self.conv1d = nn.Conv1d(
+            in_channels=1,
+            out_channels=1,
+            kernel_size=k_size,
+            padding=(k_size - 1) // 2,
+            bias=False
         )
 
+        self.sigmoid = nn.Sigmoid()
+
     def forward(self, x):
-        y = list(self.cv1(x).chunk(2, 1))
-        y.extend(m(y[-1]) for m in self.m)
-        return self.cv2(torch.cat(y, 1))
+        # x: [B, C, H, W]
+        avg = self.avg_pool(x)  # [B, C, 1, 1]
+        max_ = self.max_pool(x)  # [B, C, 1, 1]
+
+        y = avg + max_  # [B, C, 1, 1]
+        y = y.squeeze(-1).transpose(-1, -2)  # [B, 1, C]
+        y = self.conv1d(y)  # [B, 1, C]
+        y = y.transpose(-1, -2).unsqueeze(-1)  # [B, C, 1, 1]
+
+        weight = self.sigmoid(y)
+        return x * weight
 
 
-class C2fGhost(nn.Module):
+class LiteSASK(nn.Module):
     """
-    Lightweight C2f for neck.
-    It uses GhostConv and GhostBottleneck to reduce computation.
+    Lite Spatial-Aware Selective Kernel.
+    Spatial attention branch inspired by DualSKNet SASK.
+    Uses average/max spatial maps and a lightweight Conv2D.
     """
 
-    def __init__(self, c1, c2, n=1, shortcut=False, g=1, e=0.5):
+    def __init__(self, kernel_size=7):
         super().__init__()
-        self.c = int(c2 * e)
+        padding = kernel_size // 2
 
-        self.cv1 = GhostConv(c1, 2 * self.c, 1, 1)
-        self.cv2 = GhostConv((2 + n) * self.c, c2, 1, 1)
-
-        self.m = nn.ModuleList(
-            GhostBottleneck(self.c, self.c, 3, 1)
-            for _ in range(n)
+        self.conv = nn.Conv2d(
+            in_channels=2,
+            out_channels=1,
+            kernel_size=kernel_size,
+            padding=padding,
+            bias=False
         )
 
+        self.sigmoid = nn.Sigmoid()
+
     def forward(self, x):
-        y = list(self.cv1(x).chunk(2, 1))
-        y.extend(m(y[-1]) for m in self.m)
-        return self.cv2(torch.cat(y, 1))
-    
+        # x: [B, C, H, W]
+        avg = torch.mean(x, dim=1, keepdim=True)  # [B, 1, H, W]
+        max_, _ = torch.max(x, dim=1, keepdim=True)  # [B, 1, H, W]
 
-class DLKBlock(nn.Module):
+        y = torch.cat([avg, max_], dim=1)  # [B, 2, H, W]
+        weight = self.sigmoid(self.conv(y))  # [B, 1, H, W]
+
+        return x * weight
+
+
+class LiteDualSK(nn.Module):
     """
-    Deployable Large-Kernel Block for UAV dense small-target detection.
-    Uses only Conv/DWConv/Concat/Residual, suitable for OpenVINO/Vitis-AI.
+    Lightweight DualSK-inspired block for YOLOv8n.
+
+    Design:
+    - Uses two depthwise convolution branches with different kernel sizes.
+    - Uses LiteSASK for spatial attention.
+    - Uses LiteCASK for channel attention.
+    - Keeps a residual connection to preserve lightweight model stability.
+
+    Recommended placement:
+    - After deeper C2f blocks in YOLOv8n backbone.
+    - Avoid placing it in every stage.
     """
 
-    def __init__(self, c, r=4, scale=0.1):
+    def __init__(self, channels, k1=5, k2=7, cask_kernel=3):
         super().__init__()
-        c_ = max(c // r, 32)
 
-        self.reduce = Conv(c, c_, 1, 1)
-        self.dw5 = DWConv(c_, c_, 5, 1)
-        self.dw7 = DWConv(c_, c_, 7, 1)
-        self.fuse = Conv(c_ * 2, c, 1, 1)
+        self.dwconv_small = nn.Conv2d(
+            channels,
+            channels,
+            kernel_size=k1,
+            stride=1,
+            padding=k1 // 2,
+            groups=channels,
+            bias=False
+        )
 
-        self.gamma = nn.Parameter(torch.ones(1) * scale)
+        self.dwconv_large = nn.Conv2d(
+            channels,
+            channels,
+            kernel_size=k2,
+            stride=1,
+            padding=k2 // 2,
+            groups=channels,
+            bias=False
+        )
+
+        self.bn = nn.BatchNorm2d(channels)
+        self.act = nn.SiLU(inplace=True)
+
+        self.sask = LiteSASK(kernel_size=7)
+        self.cask = LiteCASK(channels, k_size=cask_kernel)
+
+        self.project = nn.Conv2d(
+            channels,
+            channels,
+            kernel_size=1,
+            stride=1,
+            padding=0,
+            bias=False
+        )
+
+        self.project_bn = nn.BatchNorm2d(channels)
 
     def forward(self, x):
-        y = self.reduce(x)
-        y = torch.cat((self.dw5(y), self.dw7(y)), dim=1)
-        y = self.fuse(y)
-        return x + self.gamma * y
+        identity = x
+
+        x_small = self.dwconv_small(x)
+        x_large = self.dwconv_large(x)
+
+        x_msk = x_small + x_large
+        x_msk = self.act(self.bn(x_msk))
+
+        x_s = self.sask(x_msk)
+        x_c = self.cask(x_msk)
+
+        out = x_s + x_c
+        out = self.project_bn(self.project(out))
+
+        return self.act(out + identity)
 # ==========================================
 # KẾT THÚC MODULE DUAL-SK
 # ==========================================

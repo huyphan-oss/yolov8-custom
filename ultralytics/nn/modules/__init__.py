@@ -60,6 +60,9 @@ from .block import (
     SCDown,
     TorchVision,
     ECAAttention,
+    C2fGhost, 
+    GhostConvLite, 
+    GhostBottleneckLite
 )
 from .conv import (
     CBAM,
@@ -189,4 +192,7 @@ __all__ = (
     "YOLOESegment26",
     "v10Detect",
     "ECAAttention",
+    "C2fGhost",
+    "GhostConvLite",
+    "GhostBottleneckLite",
 )

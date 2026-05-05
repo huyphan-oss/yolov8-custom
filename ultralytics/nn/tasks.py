@@ -72,9 +72,7 @@ from ultralytics.nn.modules import (
     YOLOESegment,
     YOLOESegment26,
     v10Detect,
-    LiteDualSK,
-    LiteCASK,
-    LiteSASK,
+    ECAAttention,
 )
 from ultralytics.utils import DEFAULT_CFG_DICT, LOGGER, WINDOWS, YAML, colorstr, emojis
 from ultralytics.utils.checks import check_requirements, check_suffix, check_yaml
@@ -1645,7 +1643,7 @@ def parse_model(d, ch, verbose=True):
                 with contextlib.suppress(ValueError):
                     args[j] = locals()[a] if a in locals() else ast.literal_eval(a)
         n = n_ = max(round(n * depth), 1) if n > 1 else n  # depth gain
-        if m is LiteDualSK:
+        if m is ECAAttention:
             c1 = ch[f]
             c2 = c1
             args = [c1, *args]

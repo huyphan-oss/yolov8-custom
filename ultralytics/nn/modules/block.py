@@ -52,9 +52,7 @@ __all__ = (
     "ResNetLayer",
     "SCDown",
     "TorchVision",
-    "LiteDualSK",
-    "LiteCASK",
-    "LiteSASK",
+    "ECAAttention",
 )
 
 
@@ -2072,164 +2070,32 @@ class RealNVP(nn.Module):
 # ==========================================
 # THÊM MODULE DUAL-SK TỪ ĐÂY
 # ==========================================
-
-
-class LiteCASK(nn.Module):
+class ECAAttention(nn.Module):
     """
-    Lite Channel-Aware Selective Kernel.
-    Channel attention branch inspired by DualSKNet CASK.
-    Uses GAP + GMP + Conv1D for lightweight channel dependency modeling.
+    Efficient Channel Attention.
+    Lightweight channel attention module for YOLOv8n.
+    Suitable for resource-constrained hardware.
     """
 
-    def __init__(self, channels, k_size=3):
+    def __init__(self, c1, c2=None, k_size=3):
         super().__init__()
         self.avg_pool = nn.AdaptiveAvgPool2d(1)
-        self.max_pool = nn.AdaptiveMaxPool2d(1)
-
-        self.conv1d = nn.Conv1d(
+        self.conv = nn.Conv1d(
             in_channels=1,
             out_channels=1,
             kernel_size=k_size,
             padding=(k_size - 1) // 2,
             bias=False
         )
-
         self.sigmoid = nn.Sigmoid()
 
     def forward(self, x):
-        # x: [B, C, H, W]
-        avg = self.avg_pool(x)  # [B, C, 1, 1]
-        max_ = self.max_pool(x)  # [B, C, 1, 1]
-
-        y = avg + max_  # [B, C, 1, 1]
-        y = y.squeeze(-1).transpose(-1, -2)  # [B, 1, C]
-        y = self.conv1d(y)  # [B, 1, C]
-        y = y.transpose(-1, -2).unsqueeze(-1)  # [B, C, 1, 1]
-
-        weight = self.sigmoid(y)
-        return x * weight
-
-
-class LiteSASK(nn.Module):
-    """
-    Lite Spatial-Aware Selective Kernel.
-    Spatial attention branch inspired by DualSKNet SASK.
-    Uses average/max spatial maps and a lightweight Conv2D.
-    """
-
-    def __init__(self, kernel_size=7):
-        super().__init__()
-        padding = kernel_size // 2
-
-        self.conv = nn.Conv2d(
-            in_channels=2,
-            out_channels=1,
-            kernel_size=kernel_size,
-            padding=padding,
-            bias=False
-        )
-
-        self.sigmoid = nn.Sigmoid()
-
-    def forward(self, x):
-        # x: [B, C, H, W]
-        avg = torch.mean(x, dim=1, keepdim=True)  # [B, 1, H, W]
-        max_, _ = torch.max(x, dim=1, keepdim=True)  # [B, 1, H, W]
-
-        y = torch.cat([avg, max_], dim=1)  # [B, 2, H, W]
-        weight = self.sigmoid(self.conv(y))  # [B, 1, H, W]
-
-        return x * weight
-
-
-class LiteDualSK(nn.Module):
-    """
-    Lightweight DualSK-inspired block for YOLOv8n.
-
-    This version is compatible with Ultralytics parse_model().
-    It accepts both:
-        LiteDualSK(c1)
-    and:
-        LiteDualSK(c1, c2)
-
-    c2 is ignored because this block preserves input/output channels.
-    """
-
-    def __init__(self, c1, c2=None, k1=5, k2=7, cask_kernel=3):
-        super().__init__()
-
-        # Preserve channels. Ignore c2 if Ultralytics passes it.
-        channels = c1
-
-        # Force odd kernels to keep feature map size unchanged.
-        if k1 % 2 == 0:
-            k1 += 1
-        if k2 % 2 == 0:
-            k2 += 1
-        if cask_kernel % 2 == 0:
-            cask_kernel += 1
-
-        self.dwconv_small = nn.Conv2d(
-            channels,
-            channels,
-            kernel_size=k1,
-            stride=1,
-            padding=k1 // 2,
-            groups=channels,
-            bias=False
-        )
-
-        self.dwconv_large = nn.Conv2d(
-            channels,
-            channels,
-            kernel_size=k2,
-            stride=1,
-            padding=k2 // 2,
-            groups=channels,
-            bias=False
-        )
-
-        self.bn = nn.BatchNorm2d(channels)
-        self.act = nn.SiLU(inplace=True)
-
-        self.sask = LiteSASK(kernel_size=7)
-        self.cask = LiteCASK(channels, k_size=cask_kernel)
-
-        self.project = nn.Conv2d(
-            channels,
-            channels,
-            kernel_size=1,
-            stride=1,
-            padding=0,
-            bias=False
-        )
-
-        self.project_bn = nn.BatchNorm2d(channels)
-
-    def forward(self, x):
-        identity = x
-
-        x_small = self.dwconv_small(x)
-        x_large = self.dwconv_large(x)
-
-        # Safety crop in case any odd input size creates a mismatch.
-        if x_small.shape[-2:] != x_large.shape[-2:]:
-            h = min(x_small.shape[-2], x_large.shape[-2])
-            w = min(x_small.shape[-1], x_large.shape[-1])
-            x_small = x_small[..., :h, :w]
-            x_large = x_large[..., :h, :w]
-            identity = identity[..., :h, :w]
-
-        x_msk = x_small + x_large
-        x_msk = self.act(self.bn(x_msk))
-
-        x_s = self.sask(x_msk)
-        x_c = self.cask(x_msk)
-
-        out = x_s + x_c
-        out = self.project_bn(self.project(out))
-
-        return self.act(out + identity)
+        y = self.avg_pool(x)                       # [B, C, 1, 1]
+        y = y.squeeze(-1).transpose(-1, -2)        # [B, 1, C]
+        y = self.conv(y)                           # [B, 1, C]
+        y = y.transpose(-1, -2).unsqueeze(-1)      # [B, C, 1, 1]
+        y = self.sigmoid(y)
+        return x * y
 # ==========================================
 # KẾT THÚC MODULE DUAL-SK
 # ==========================================

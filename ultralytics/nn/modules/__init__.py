@@ -59,9 +59,7 @@ from .block import (
     ResNetLayer,
     SCDown,
     TorchVision,
-    LiteCASK,
-    LiteSASK,
-    LiteDualSK,
+    ECAAttention,
 )
 from .conv import (
     CBAM,
@@ -190,7 +188,5 @@ __all__ = (
     "YOLOESegment",
     "YOLOESegment26",
     "v10Detect",
-    "LiteCASK",
-    "LiteSASK",
-    "LiteDualSK",
+    "ECAAttention",
 )

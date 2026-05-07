@@ -62,7 +62,9 @@ from .block import (
     ECAAttention,
     C2fGhost, 
     GhostConvLite, 
-    GhostBottleneckLite
+    GhostBottleneckLite,
+    DWBottleneck, 
+    C2fLite
 )
 from .conv import (
     CBAM,
@@ -195,4 +197,6 @@ __all__ = (
     "C2fGhost",
     "GhostConvLite",
     "GhostBottleneckLite",
+    "DWBottleneck",
+    "C2fLite",
 )

@@ -64,7 +64,9 @@ from .block import (
     GhostConvLite, 
     GhostBottleneckLite,
     DWBottleneck, 
-    C2fLite
+    C2fLite,
+    FastBottleneck, 
+    C2fFast
 )
 from .conv import (
     CBAM,
@@ -199,4 +201,6 @@ __all__ = (
     "GhostBottleneckLite",
     "DWBottleneck",
     "C2fLite",
+    "FastBottleneck",
+    "C2fFast",
 )

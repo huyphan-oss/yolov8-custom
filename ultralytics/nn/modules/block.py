@@ -56,8 +56,9 @@ __all__ = (
     "C2fGhost",
     "GhostConvLite",
     "GhostBottleneckLite",
-    "DWBottleneck",
     "C2fLite",
+    "PDTBottleneck",
+    "C2fPDT",
 )
 
 
@@ -2192,14 +2193,15 @@ class C2fLite(nn.Module):
         y.extend(m(y[-1]) for m in self.m)
         return self.cv2(torch.cat(y, 1))
  # ==========================================   
-class FastBottleneck(nn.Module):
-    """
-    Lightweight bottleneck for C2fFast.
 
-    Compared with the original Bottleneck in C2f:
-    - uses only one 3x3 Conv
-    - keeps residual shortcut
-    - reduces computation while preserving spatial feature extraction
+class PDTBottleneck(nn.Module):
+    """
+    Lightweight bottleneck designed for PDT dense small/medium object detection.
+
+    Compared with the original YOLOv8 Bottleneck:
+    - uses only one main spatial convolution
+    - keeps residual shortcut for stable feature learning
+    - reduces computation and activation cost
     """
 
     def __init__(self, c1, c2, shortcut=True):
@@ -2212,23 +2214,36 @@ class FastBottleneck(nn.Module):
         return x + y if self.add else y
 
 
-class C2fFast(nn.Module):
+class C2fPDT(nn.Module):
     """
-    Faster C2f replacement.
+    C2fPDT: a lightweight C2f variant for PDT UAV pest/disease detection.
 
-    Design goal:
-    - keep C2f-style feature aggregation
-    - reduce computation inside bottlenecks
-    - suitable for small/medium object detection with limited hardware
+    Design motivation:
+    - PDT has one class and mainly dense small/medium targets.
+    - Full C2f capacity is relatively redundant for this task.
+    - This block keeps C2f-style feature aggregation but reduces internal channels
+      and uses lightweight PDTBottleneck units.
+
+    Args:
+        c1: input channels
+        c2: output channels
+        n: number of bottlenecks
+        shortcut: whether to use residual connection
+        e: hidden channel expansion ratio
     """
 
-    def __init__(self, c1, c2, n=1, shortcut=False, e=0.5):
+    def __init__(self, c1, c2, n=1, shortcut=False, e=0.375):
         super().__init__()
-        self.c = int(c2 * e)
+
+        # Slim hidden channels for lower Params/GFLOPs.
+        self.c = max(8, int(c2 * e))
+        self.c = (self.c + 7) // 8 * 8  # hardware-friendly channel alignment
+
         self.cv1 = Conv(c1, 2 * self.c, 1, 1)
         self.cv2 = Conv((2 + n) * self.c, c2, 1)
+
         self.m = nn.ModuleList(
-            FastBottleneck(self.c, self.c, shortcut) for _ in range(n)
+            PDTBottleneck(self.c, self.c, shortcut) for _ in range(n)
         )
 
     def forward(self, x):

@@ -72,7 +72,8 @@ from ultralytics.nn.modules import (
     YOLOESegment,
     YOLOESegment26,
     v10Detect,
-    ECAAttention,
+    CASKAttention,
+    
     C2fGhost,
     C2fLite,
   
@@ -1657,7 +1658,7 @@ def parse_model(d, ch, verbose=True):
                 with contextlib.suppress(ValueError):
                     args[j] = locals()[a] if a in locals() else ast.literal_eval(a)
         n = n_ = max(round(n * depth), 1) if n > 1 else n  # depth gain
-        if m is ECAAttention:
+        if m is CASKAttention:
             c1 = ch[f]
             c2 = c1
             args = [c1, *args]

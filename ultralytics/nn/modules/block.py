@@ -52,7 +52,7 @@ __all__ = (
     "ResNetLayer",
     "SCDown",
     "TorchVision",
-    "ECAAttention",
+    "CASKAttention",
     "C2fGhost",
     "GhostConvLite",
     "GhostBottleneckLite",
@@ -2078,32 +2078,54 @@ class RealNVP(nn.Module):
 # ==========================================
 # THÊM MODULE DUAL-SK TỪ ĐÂY
 # ==========================================
-class ECAAttention(nn.Module):
+class CASKAttention(nn.Module):
     """
-    Efficient Channel Attention.
-    Lightweight channel attention module for YOLOv8n.
-    Suitable for resource-constrained hardware.
+    CASKAttention: lightweight channel-aware selective attention.
+
+    This module is inspired by the CASK branch in DualSK-style designs.
+    It uses GAP + GMP + Conv1D to model channel importance with very small overhead.
+
+    Recommended use:
+    - Place after P4 head only.
+    - Avoid placing on P3 first because P3 is important for small-object localization.
     """
 
-    def __init__(self, c1, c2=None, k_size=3):
+    def __init__(self, c1, k_size=3, residual=True):
         super().__init__()
+
         self.avg_pool = nn.AdaptiveAvgPool2d(1)
-        self.conv = nn.Conv1d(
+        self.max_pool = nn.AdaptiveMaxPool2d(1)
+
+        self.conv1d = nn.Conv1d(
             in_channels=1,
             out_channels=1,
             kernel_size=k_size,
             padding=(k_size - 1) // 2,
             bias=False
         )
+
         self.sigmoid = nn.Sigmoid()
+        self.residual = residual
+
+        # Learnable scale. Init at 0 so the module starts close to identity.
+        self.gamma = nn.Parameter(torch.zeros(1))
 
     def forward(self, x):
-        y = self.avg_pool(x)                       # [B, C, 1, 1]
-        y = y.squeeze(-1).transpose(-1, -2)        # [B, 1, C]
-        y = self.conv(y)                           # [B, 1, C]
-        y = y.transpose(-1, -2).unsqueeze(-1)      # [B, C, 1, 1]
-        y = self.sigmoid(y)
-        return x * y
+        # x: [B, C, H, W]
+        avg = self.avg_pool(x)
+        max_ = self.max_pool(x)
+
+        y = avg + max_                          # [B, C, 1, 1]
+        y = y.squeeze(-1).transpose(-1, -2)     # [B, 1, C]
+        y = self.conv1d(y)                      # [B, 1, C]
+        y = y.transpose(-1, -2).unsqueeze(-1)   # [B, C, 1, 1]
+
+        weight = self.sigmoid(y)
+
+        if self.residual:
+            return x * (1.0 + self.gamma * weight)
+
+        return x * weight
 # ==========================================
 class GhostConvLite(nn.Module):
     """Lightweight Ghost Convolution."""

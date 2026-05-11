@@ -1,0 +1,33 @@
+# YOLOv8n-P3P4-CASK-P4Only
+# Based on P3/P4 2concat model
+# Add lightweight CASK attention only after P4 head
+
+nc: 1
+
+scales:
+  n: [0.33, 0.25, 1024]
+
+backbone:
+  - [-1, 1, Conv, [64, 3, 2]]          # 0-P1/2
+  - [-1, 1, Conv, [128, 3, 2]]         # 1-P2/4
+  - [-1, 3, C2f, [128, True]]          # 2
+
+  - [-1, 1, Conv, [256, 3, 2]]         # 3-P3/8
+  - [-1, 6, C2f, [256, True]]          # 4 P3
+
+  - [-1, 1, Conv, [512, 3, 2]]         # 5-P4/16
+  - [-1, 6, C2f, [512, True]]          # 6 P4
+
+head:
+  # P4 -> P3
+  - [-1, 1, nn.Upsample, [None, 2, "nearest"]]
+  - [[-1, 4], 1, Concat, [1]]
+  - [-1, 3, C2f, [256]]                # 9 P3 head, keep original
+
+  # P3 -> P4
+  - [-1, 1, Conv, [256, 3, 2]]
+  - [[-1, 6], 1, Concat, [1]]
+  - [-1, 3, C2f, [512]]                # 12 P4 head
+  - [-1, 1, CASKAttention, []]         # 13 CASK only on P4
+
+  - [[9, 13], 1, Detect, [nc]]

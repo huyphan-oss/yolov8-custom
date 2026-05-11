@@ -61,6 +61,10 @@ __all__ = (
     "C2fPDT",
     "EdgeBottleneck",
     "C2fEdge",
+    "EdgeDWBottleneck",
+    "C2fDW",
+    "EdgeDWLRBottleneck",
+    "C2fDWLR",
 )
 
 
@@ -2331,6 +2335,104 @@ class C2fEdge(nn.Module):
 
         self.m = nn.ModuleList(
             EdgeBottleneck(
+                self.c,
+                self.c,
+                shortcut=shortcut,
+                rank_ratio=rank_ratio
+            )
+            for _ in range(n)
+        )
+
+    def forward(self, x):
+        y = list(self.cv1(x).chunk(2, 1))
+        y.extend(m(y[-1]) for m in self.m)
+        return self.cv2(torch.cat(y, 1))
+# ==========================================   
+class EdgeDWBottleneck(nn.Module):
+    """
+    Ablation block: Depthwise + Pointwise.
+    Used to test the effect of depthwise spatial compression only.
+    """
+
+    def __init__(self, c1, c2, shortcut=True):
+        super().__init__()
+        self.dw = Conv(c1, c1, k=3, s=1, g=c1)
+        self.pw = Conv(c1, c2, k=1, s=1)
+        self.add = shortcut and c1 == c2
+
+    def forward(self, x):
+        y = self.pw(self.dw(x))
+        return x + y if self.add else y
+
+
+class C2fDW(nn.Module):
+    """
+    C2fDW: C2f with depthwise separable bottlenecks.
+    Ablation version: DSC only.
+    """
+
+    def __init__(self, c1, c2, n=1, shortcut=True, e=0.5):
+        super().__init__()
+        self.c = max(8, int(c2 * e))
+        self.c = (self.c + 7) // 8 * 8
+
+        self.cv1 = Conv(c1, 2 * self.c, 1, 1)
+        self.cv2 = Conv((2 + n) * self.c, c2, 1)
+
+        self.m = nn.ModuleList(
+            EdgeDWBottleneck(self.c, self.c, shortcut=shortcut)
+            for _ in range(n)
+        )
+
+    def forward(self, x):
+        y = list(self.cv1(x).chunk(2, 1))
+        y.extend(m(y[-1]) for m in self.m)
+        return self.cv2(torch.cat(y, 1))
+
+
+class EdgeDWLRBottleneck(nn.Module):
+    """
+    Ablation block: Depthwise + Low-rank pointwise.
+    Used to test the effect of low-rank channel decomposition.
+    Shortcut can be disabled to compare with C2fEdge.
+    """
+
+    def __init__(self, c1, c2, shortcut=False, rank_ratio=0.75):
+        super().__init__()
+
+        r = max(8, int(c2 * rank_ratio))
+        r = (r + 7) // 8 * 8
+
+        self.dw = Conv(c1, c1, k=3, s=1, g=c1)
+        self.pw_reduce = Conv(c1, r, k=1, s=1)
+        self.pw_expand = Conv(r, c2, k=1, s=1)
+
+        self.add = shortcut and c1 == c2
+
+    def forward(self, x):
+        y = self.dw(x)
+        y = self.pw_reduce(y)
+        y = self.pw_expand(y)
+        return x + y if self.add else y
+
+
+class C2fDWLR(nn.Module):
+    """
+    C2fDWLR: C2f with depthwise + low-rank bottlenecks.
+    Ablation version: DSC + LR, without shortcut by default.
+    """
+
+    def __init__(self, c1, c2, n=1, shortcut=False, e=0.5, rank_ratio=0.75):
+        super().__init__()
+
+        self.c = max(8, int(c2 * e))
+        self.c = (self.c + 7) // 8 * 8
+
+        self.cv1 = Conv(c1, 2 * self.c, 1, 1)
+        self.cv2 = Conv((2 + n) * self.c, c2, 1)
+
+        self.m = nn.ModuleList(
+            EdgeDWLRBottleneck(
                 self.c,
                 self.c,
                 shortcut=shortcut,

@@ -73,13 +73,16 @@ from ultralytics.nn.modules import (
     YOLOESegment26,
     v10Detect,
     CASKAttention,
-    
+
     C2fGhost,
     C2fLite,
   
     C2fPDT,
 
     C2fEdge
+
+    C2fDW,
+    C2fDWLR,
 )
 from ultralytics.utils import DEFAULT_CFG_DICT, LOGGER, WINDOWS, YAML, colorstr, emojis
 from ultralytics.utils.checks import check_requirements, check_suffix, check_yaml
@@ -1619,7 +1622,9 @@ def parse_model(d, ch, verbose=True):
             C2fGhost,
             C2fLite,
             C2fPDT,
-            C2fEdge
+            C2fEdge,
+            C2fDW,
+            C2fDWLR,
         }
     )
     repeat_modules = frozenset(  # modules with 'repeat' arguments
@@ -1642,7 +1647,9 @@ def parse_model(d, ch, verbose=True):
             C2fGhost,
             C2fLite,
             C2fPDT,
-            C2fEdge
+            C2fEdge,
+            C2fDW,
+            C2fDWLR,
         }
     )
     for i, (f, n, m, args) in enumerate(d["backbone"] + d["head"]):  # from, number, module, args

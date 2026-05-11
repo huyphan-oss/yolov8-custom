@@ -67,6 +67,8 @@ from .block import (
     C2fLite,
     PDTBottleneck,
     C2fPDT,
+    EdgeBottleneck, 
+    C2fEdge
 )
 from .conv import (
     CBAM,
@@ -203,4 +205,6 @@ __all__ = (
     "C2fLite",
     "PDTBottleneck",
     "C2fPDT",
+    "EdgeBottleneck",
+    "C2fEdge",
 )

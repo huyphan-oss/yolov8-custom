@@ -77,6 +77,8 @@ from ultralytics.nn.modules import (
     C2fLite,
   
     C2fPDT,
+
+    C2fEdge
 )
 from ultralytics.utils import DEFAULT_CFG_DICT, LOGGER, WINDOWS, YAML, colorstr, emojis
 from ultralytics.utils.checks import check_requirements, check_suffix, check_yaml
@@ -1616,6 +1618,7 @@ def parse_model(d, ch, verbose=True):
             C2fGhost,
             C2fLite,
             C2fPDT,
+            C2fEdge
         }
     )
     repeat_modules = frozenset(  # modules with 'repeat' arguments
@@ -1638,6 +1641,7 @@ def parse_model(d, ch, verbose=True):
             C2fGhost,
             C2fLite,
             C2fPDT,
+            C2fEdge
         }
     )
     for i, (f, n, m, args) in enumerate(d["backbone"] + d["head"]):  # from, number, module, args

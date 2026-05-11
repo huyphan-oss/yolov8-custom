@@ -59,6 +59,8 @@ __all__ = (
     "C2fLite",
     "PDTBottleneck",
     "C2fPDT",
+    "EdgeBottleneck",
+    "C2fEdge",
 )
 
 
@@ -2244,6 +2246,75 @@ class C2fPDT(nn.Module):
 
         self.m = nn.ModuleList(
             PDTBottleneck(self.c, self.c, shortcut) for _ in range(n)
+        )
+
+    def forward(self, x):
+        y = list(self.cv1(x).chunk(2, 1))
+        y.extend(m(y[-1]) for m in self.m)
+        return self.cv2(torch.cat(y, 1))
+# ==========================================    
+class EdgeBottleneck(nn.Module):
+    """
+    EdgeBottleneck for C2fEdge.
+
+    Components:
+    1. Depthwise 3x3 convolution for lightweight spatial filtering.
+    2. Low-rank pointwise decomposition: C -> r -> C.
+    3. Residual shortcut to preserve information after compression.
+    """
+
+    def __init__(self, c1, c2, shortcut=True, rank_ratio=0.5):
+        super().__init__()
+
+        r = max(8, int(c2 * rank_ratio))
+        r = (r + 7) // 8 * 8  # hardware-friendly channel alignment
+
+        # Depthwise spatial convolution
+        self.dw = Conv(c1, c1, k=3, s=1, g=c1)
+
+        # Low-rank pointwise channel mixing
+        self.pw_reduce = Conv(c1, r, k=1, s=1)
+        self.pw_expand = Conv(r, c2, k=1, s=1)
+
+        # Shortcut only when input/output channels match
+        self.add = shortcut and c1 == c2
+
+    def forward(self, x):
+        y = self.dw(x)
+        y = self.pw_reduce(y)
+        y = self.pw_expand(y)
+        return x + y if self.add else y
+
+
+class C2fEdge(nn.Module):
+    """
+    C2fEdge: lightweight C2f replacement for edge deployment.
+
+    Compared with original C2f:
+    - Keeps C2f-style partial feature aggregation.
+    - Replaces standard Bottleneck with EdgeBottleneck.
+    - Uses depthwise convolution to reduce spatial computation.
+    - Uses low-rank 1x1 decomposition to reduce channel-mixing cost.
+    - Uses shortcut to reduce information loss.
+    """
+
+    def __init__(self, c1, c2, n=1, shortcut=True, e=0.5, rank_ratio=0.5):
+        super().__init__()
+
+        self.c = max(8, int(c2 * e))
+        self.c = (self.c + 7) // 8 * 8
+
+        self.cv1 = Conv(c1, 2 * self.c, 1, 1)
+        self.cv2 = Conv((2 + n) * self.c, c2, 1)
+
+        self.m = nn.ModuleList(
+            EdgeBottleneck(
+                self.c,
+                self.c,
+                shortcut=shortcut,
+                rank_ratio=rank_ratio
+            )
+            for _ in range(n)
         )
 
     def forward(self, x):

@@ -79,7 +79,7 @@ from ultralytics.nn.modules import (
   
     C2fPDT,
 
-    C2fEdge
+    C2fEdge,
 
     C2fDW,
     C2fDWLR,

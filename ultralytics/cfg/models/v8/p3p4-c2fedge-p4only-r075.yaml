@@ -1,6 +1,5 @@
-# YOLOv8n-P3P4-C2fEdge-P4Only-r075
-# Ablation 3: DSC + Low-rank + Shortcut on P4 head
-# rank_ratio = 0.75 to avoid over-compression
+# YOLOv8n-P3P4-SPPF-C2fEdge-P4Only-r075
+# Ablation 3: keep P4-SPPF, replace only P4 head with C2fEdge
 
 nc: 1
 
@@ -18,13 +17,15 @@ backbone:
   - [-1, 1, Conv, [512, 3, 2]]
   - [-1, 6, C2f, [512, True]]
 
+  - [-1, 1, SPPF, [512, 5]]            # 7 P4-SPPF
+
 head:
   - [-1, 1, nn.Upsample, [None, 2, "nearest"]]
   - [[-1, 4], 1, Concat, [1]]
-  - [-1, 3, C2f, [256]]
+  - [-1, 3, C2f, [256]]                # 10 P3 head
 
   - [-1, 1, Conv, [256, 3, 2]]
-  - [[-1, 6], 1, Concat, [1]]
-  - [-1, 3, C2fEdge, [512, True, 0.5, 0.75]]
+  - [[-1, 7], 1, Concat, [1]]
+  - [-1, 3, C2fEdge, [512, True, 0.5, 0.75]]    # 13 P4 head
 
-  - [[9, 12], 1, Detect, [nc]]
+  - [[10, 13], 1, Detect, [nc]]
